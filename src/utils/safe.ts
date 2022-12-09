@@ -1,11 +1,17 @@
 import Safe from '@gnosis.pm/safe-core-sdk';
 import EthersAdapter from '@gnosis.pm/safe-ethers-lib';
+import { SafeVersion } from '@gnosis.pm/safe-core-sdk-types';
 import { ethers, providers } from 'ethers';
 import { CHAIN_ID, SAFE_ADDRESS } from '../configuration';
 import { areStringsEqual } from './strings';
 import { hashMessage, verifyMessage, isHexString } from 'ethers/lib/utils';
 import { EIP712TypedData } from '../types/eip712';
 import { getEIP712MessageHash } from './eip712';
+
+type SafeEIP712Domain = {
+  chainId?: string;
+  verifyingContract: string;
+};
 
 // https://docs.gnosis.io/safe/docs/contracts_signatures/#pre-validated-signatures
 const getPreValidatedSignature = (signerAddress: string) =>
@@ -100,20 +106,24 @@ const adjustSignatureVbyte: AdjustVOverload = (
 const safeSignMessage = async (
   signer: providers.JsonRpcSigner,
   safeAddress: string,
+  safeVersion: SafeVersion,
   message: string,
 ): Promise<string> => {
   const hashedMessage = isHexString(message) ? message : hashMessage(message);
 
-  const signature = await signer._signTypedData(
-    {
-      chainId: CHAIN_ID,
+  let domain: SafeEIP712Domain = {
+    chainId: CHAIN_ID,
+    verifyingContract: safeAddress,
+  };
+  if (safeVersion === '1.1.1') {
+    domain = {
       verifyingContract: safeAddress,
-    },
-    EIP712_SAFE_MESSAGE_TYPE,
-    {
-      message: hashedMessage,
-    },
-  );
+    };
+  }
+
+  const signature = await signer._signTypedData(domain, EIP712_SAFE_MESSAGE_TYPE, {
+    message: hashedMessage,
+  });
 
   return adjustSignatureVbyte('eth_signTypedData', signature);
 };
@@ -121,11 +131,12 @@ const safeSignMessage = async (
 const safeSignTypedMessage = async (
   signer: providers.JsonRpcSigner,
   safeAddress: string,
+  safeVersion: SafeVersion,
   typedData: EIP712TypedData | string,
 ): Promise<string> => {
   const typedDataHash = getEIP712MessageHash(typedData);
 
-  const signature = await safeSignMessage(signer, safeAddress, typedDataHash);
+  const signature = await safeSignMessage(signer, safeAddress, safeVersion, typedDataHash);
   return signature;
 };
 
