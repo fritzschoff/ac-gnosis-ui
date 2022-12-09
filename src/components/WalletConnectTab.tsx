@@ -16,12 +16,13 @@ const WalletConnectTab = () => {
     if (!pendingRequest || !signer || !safe) return;
 
     const safeAddress = safe.getAddress();
+    const safeVersion = await safe.getContractVersion();
 
     switch (pendingRequest.method) {
       case 'eth_signTypedData':
       case 'eth_signTypedData_v4': {
         const [, typedDataString] = pendingRequest.params;
-        const signature = await safeSignTypedMessage(signer, safeAddress, typedDataString);
+        const signature = await safeSignTypedMessage(signer, safeAddress, safeVersion, typedDataString);
 
         approveRequest(pendingRequest.id, signature);
         break;
@@ -31,7 +32,7 @@ const WalletConnectTab = () => {
       case 'personal_sign': {
         let message = pendingRequest.method === 'eth_sign' ? pendingRequest.params[1] : pendingRequest.params[0];
         message = tryHexBytesToUtf8(message);
-        const signature = await safeSignMessage(signer, safeAddress, message);
+        const signature = await safeSignMessage(signer, safeAddress, safeVersion, message);
 
         approveRequest(pendingRequest.id, signature);
         break;
