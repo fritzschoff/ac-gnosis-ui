@@ -32,7 +32,7 @@ const SignRequest = ({
   }
 
   return (
-    <Flex flexDirection="column" alignItems="flex-start">
+    <Flex flexDirection="column" alignItems="flex-start" overflow="scroll" maxW="100%">
       <Heading mb={4}>🔏 Pending {request.method} request:</Heading>
       {content}
       <ButtonGroup mt={8} w="100%">
