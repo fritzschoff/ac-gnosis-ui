@@ -12,7 +12,7 @@ import { getSafe } from './utils/safe';
 
 const injected = injectedModule();
 const coinbaseWalletSdk = coinbaseWalletModule({ darkMode: true });
-const ledger = ledgerModule();
+const ledger = ledgerModule({ projectId: '099e1ff8ded93df0432e37626e04e09d', walletConnectVersion: 2 });
 const gnosis = gnosisModule();
 const torus = torusModule();
 
