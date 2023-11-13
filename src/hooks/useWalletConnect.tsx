@@ -3,10 +3,10 @@ import { useWeb3Context } from '../web3.context';
 // import { areStringsEqual } from '../utils/strings';
 // import { isObjectEIP712TypedData } from '../utils/eip712';
 import { RpcRequest } from '../types/rpc';
-
 import { Core } from '@walletconnect/core';
-import { Web3Wallet, IWeb3Wallet } from '@walletconnect/web3wallet';
 import { WcConnectProps } from '../components/WalletConnectField';
+import { SignClient } from '@walletconnect/sign-client';
+import { SignClient as SignClientType } from '@walletconnect/sign-client/dist/types/client';
 
 enum CONNECTION_STATUS {
   CONNECTED = 'CONNECTED',
@@ -24,34 +24,36 @@ const core = new Core({
 const useWalletConnect = () => {
   const { signer, safe } = useWeb3Context();
 
-  const [wallet, setWallet] = useState<IWeb3Wallet | undefined>(undefined); // [web3wallet, setWeb3Wallet
+  const [wallet, setWallet] = useState<SignClientType | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest] = useState<RpcRequest | undefined>(undefined);
 
   useEffect(() => {
-    // iffe
     (async () => {
-      const web3wallet = await Web3Wallet.init({
-        core, // <- pass the shared `core` instance
-        metadata: {
-          name: 'ac app',
-          description: 'AC Peer app',
-          url: 'www.walletconnect.com',
-          icons: ['https://walletconnect.org/walletconnect-logo.png'],
-        },
+      const signClient = await SignClient.init({
+        projectId: '099e1ff8ded93df0432e37626e04e09d',
+        core: core,
       });
-      setWallet(web3wallet);
+      setWallet(signClient);
+      // const web3wallet = await Web3Wallet.init({
+      //   core, // <- pass the shared `core` instance
+      //   metadata: {
+      //     name: 'ac app',
+      //     description: 'AC Peer app',
+      //     url: 'www.walletconnect.com',
+      //     icons: ['https://walletconnect.org/walletconnect-logo.png'],
+      //   },
+      // });
+      // setWallet(web3wallet);
 
-      wallet?.on('session_request', async (proposal) => {
-        if (safe) {
-          wallet.approveSession({
-            id: proposal.id,
-            namespaces: {},
-          });
-
-          // setWcClientData(payload.params[0].peerMeta);
-        }
-      });
+      // wallet?.on('session_request', async (proposal) => {
+      //   if (safe) {
+      //     wallet.approveSession({
+      //       id: proposal.id,
+      //       namespaces: {},
+      //     });
+      //   }
+      // });
     })();
   }, [wallet, safe]);
 
@@ -78,9 +80,10 @@ const useWalletConnect = () => {
 
   const wcConnect = useCallback(
     async ({ uri }: WcConnectProps) => {
-      if (uri) {
-        await wallet?.pair({
+      if (uri && safe && wallet) {
+        await wallet.core.pairing.pair({
           uri,
+          activatePairing: true,
         });
         setConnectionStatus(CONNECTION_STATUS.CONNECTED);
       }
@@ -89,27 +92,25 @@ const useWalletConnect = () => {
   );
 
   const wcDisconnect = useCallback(async () => {
-    wallet?.disconnectSession({
+    wallet?.disconnect({
       topic: 'disconnect',
       reason: {
         code: 0,
         message: 'User disconnected',
       },
     });
+
     setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
   }, [wallet]);
 
-  // web3wallet.on('session_request', async (error, payload) => {
-  //   if (error) {
-  //     throw error;
-  //   }
+  // wallet?.on('session_request', async (args) => {
   //   if (safe) {
-  //     web3wallet.approveSession({
-  //       accounts: [safe.getAddress()],
+  //     wallet?.approveSession({
+  //       accounts: [safe.getAddress()] as any[],
   //       chainId: await safe.getChainId(),
   //     });
 
-  //     setWcClientData(payload.params[0].peerMeta);
+  //     // setWcClientData(payload.params[0].peerMeta);
   //   }
   // });
 
