@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { IWalletConnectSession, IClientMeta } from '@walletconnect/types';
 import { Input } from '@chakra-ui/react';
 
-type WcConnectProps = {
+export type WcConnectProps = {
   uri?: string | undefined;
   session?: IWalletConnectSession | undefined;
 };
@@ -12,7 +12,7 @@ type WalletConnectFieldProps = {
   onConnect: ({ uri }: WcConnectProps) => Promise<void>;
 };
 
-const WalletConnectField = ({ client, onConnect }: WalletConnectFieldProps): React.ReactElement => {
+const WalletConnectField = ({ onConnect }: WalletConnectFieldProps): React.ReactElement => {
   const [inputValue, setInputValue] = useState('');
 
   const onPaste = (event: React.ClipboardEvent) => {
@@ -23,9 +23,6 @@ const WalletConnectField = ({ client, onConnect }: WalletConnectFieldProps): Rea
     };
 
     setInputValue('');
-    if (client) {
-      return;
-    }
 
     const items = event.clipboardData.items;
 
