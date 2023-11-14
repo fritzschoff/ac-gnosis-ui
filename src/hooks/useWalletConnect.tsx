@@ -5,8 +5,9 @@ import { useWeb3Context } from '../web3.context';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
-import { SignClient } from '@walletconnect/sign-client';
-import { SignClient as SignClientType } from '@walletconnect/sign-client/dist/types/client';
+import { Web3Wallet, Web3WalletTypes } from '@walletconnect/web3wallet';
+import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
+import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 
 enum CONNECTION_STATUS {
   CONNECTED = 'CONNECTED',
@@ -14,8 +15,8 @@ enum CONNECTION_STATUS {
 }
 
 const core = new Core({
-  projectId: '099e1ff8ded93df0432e37626e04e09d',
-});
+  projectId: 'b8433306393b78ff75897e7f76f7d411',
+}) as any;
 
 // const rejectWithMessage = (connector: any, id: number | undefined, message: string) => {
 //   connector.rejectRequest({ id, error: { message } });
@@ -24,37 +25,22 @@ const core = new Core({
 const useWalletConnect = () => {
   const { signer, safe } = useWeb3Context();
 
-  const [wallet, setWallet] = useState<SignClientType | undefined>(undefined);
+  const [wallet, setWallet] = useState<Web3WalletType | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest] = useState<RpcRequest | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
-      const signClient = await SignClient.init({
-        projectId: '099e1ff8ded93df0432e37626e04e09d',
-        relayUrl: 'wss://relay.walletconnect.org',
-        core: core,
+      const signClient = await Web3Wallet.init({
+        core,
+        metadata: {
+          name: 'Demo app',
+          description: 'Demo Client as Wallet/Peer',
+          url: 'www.walletconnect.com',
+          icons: [],
+        },
       });
       setWallet(signClient);
-      // const web3wallet = await Web3Wallet.init({
-      //   core, // <- pass the shared `core` instance
-      //   metadata: {
-      //     name: 'ac app',
-      //     description: 'AC Peer app',
-      //     url: 'www.walletconnect.com',
-      //     icons: ['https://walletconnect.org/walletconnect-logo.png'],
-      //   },
-      // });
-      // setWallet(web3wallet);
-
-      // wallet?.on('session_request', async (proposal) => {
-      //   if (safe) {
-      //     wallet.approveSession({
-      //       id: proposal.id,
-      //       namespaces: {},
-      //     });
-      //   }
-      // });
     })();
   }, [!!wallet, safe]);
 
@@ -86,147 +72,133 @@ const useWalletConnect = () => {
           uri,
         });
         setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+
+        wallet?.on('session_request', async (params) => {
+          console.log(params);
+          // const result = '0x';
+          // try {
+          //   switch (params.method) {
+          //     case 'eth_sendTransaction': {
+          //       setPendingRequest(payload);
+          //       return;
+          //     }
+
+          //     case 'personal_sign': {
+          //       const [, address] = payload.params;
+          //       const safeAddress = safe?.getAddress() ?? '';
+
+          //       if (!areStringsEqual(address, safeAddress)) {
+          //         throw new Error('The address or message hash is invalid');
+          //       }
+
+          //       setPendingRequest(payload);
+          //       return;
+          //     }
+
+          //     case 'eth_sign': {
+          //       const [address] = payload.params;
+          //       const safeAddress = safe?.getAddress() ?? '';
+
+          //       if (!areStringsEqual(address, safeAddress)) {
+          //         throw new Error('The address or message hash is invalid');
+          //       }
+
+          //       setPendingRequest(payload);
+          //       break;
+          //     }
+
+          //     case 'eth_signTypedData':
+          //     case 'eth_signTypedData_v4': {
+          //       const [address, typedDataString] = payload.params;
+          //       const safeAddress = safe?.getAddress() ?? '';
+          //       const typedData = JSON.parse(typedDataString);
+
+          //       if (!areStringsEqual(address, safeAddress)) {
+          //         throw new Error('The address is invalid');
+          //       }
+
+          //       if (isObjectEIP712TypedData(typedData)) {
+          //         setPendingRequest(payload);
+          //         return;
+          //       } else {
+          //         throw new Error('Invalid typed data');
+          //       }
+          //     }
+          //     default: {
+          //       rejectWithMessage(wcConnector, payload.id, 'METHOD_NOT_SUPPORTED');
+          //       break;
+          //     }
+          //   }
+
+          //   wcConnector.approveRequest({
+          //     id: payload.id,
+          //     result,
+          //   });
+          // } catch (err) {
+          //   rejectWithMessage(wcConnector, payload.id, (err as Error).message);
+          // }
+        });
+
+        wallet?.on('session_delete', (error) => {
+          if (error) {
+            throw error;
+          }
+          wcDisconnect();
+        });
       }
     },
     [wallet],
   );
 
-  wallet?.on('session_proposal', (event) => {
-    console.log(event);
-    wallet.approve({
-      id: event.id,
-      namespaces: {
-        eip155: {
-          accounts: ['eip155:10:0xe2eeF82ACA1c3405cF9640B40cbD6148182E8bA6'],
-          methods: ['personal_sign', 'eth_sendTransaction'],
-          events: ['accountsChanged'],
+  async function onSessionProposal({ id, params }: Web3WalletTypes.SessionProposal) {
+    try {
+      const approvedNamespaces = buildApprovedNamespaces({
+        proposal: params,
+        supportedNamespaces: {
+          eip155: {
+            chains: ['eip155:10'],
+            methods: [
+              'personal_sign',
+              'eth_sign',
+              'eth_signTransaction',
+              'eth_signTypedData',
+              'eth_signTypedData_v3',
+              'eth_signTypedData_v4',
+              'eth_sendRawTransaction',
+              'eth_sendTransaction',
+            ],
+            events: ['accountsChanged', 'chainChanged'],
+            accounts: ['eip155:10:' + safe?.getAddress()],
+          },
         },
-      },
-    });
-  });
+      });
+      const session = await wallet?.approveSession({
+        id,
+        relayProtocol: params.relays[0].protocol,
+        namespaces: approvedNamespaces,
+      });
+      console.log(session);
+    } catch (error) {
+      console.error(error);
+      await wallet?.rejectSession({
+        id,
+        reason: getSdkError('USER_REJECTED'),
+      });
+    }
+  }
+
+  wallet?.on('session_proposal', onSessionProposal);
 
   const wcDisconnect = useCallback(async () => {
-    // wallet?.disconnect({
-    //   topic: 'disconnect',
-    //   reason: {
-    //     code: 0,
-    //     message: 'User disconnected',
-    //   },
-    // });
-    // setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
-  }, []); // wallet
-
-  // wallet?.on('session_request', async (args) => {
-  //   if (safe) {
-  //     wallet?.approveSession({
-  //       accounts: [safe.getAddress()] as any[],
-  //       chainId: await safe.getChainId(),
-  //     });
-
-  //     // setWcClientData(payload.params[0].peerMeta);
-  //   }
-  // });
-
-  // const wcConnect = useCallback(
-  //   async ({ uri, session }: { uri?: string; session?: IWalletConnectSession }) => {
-  //     if (!signer || !safe || connector) return;
-
-  //     setConnector(web3wallet);
-  //     setWcClientData(web3wallet.metadata ?? undefined);
-  //     setConnectionStatus(CONNECTION_STATUS.CONNECTED);
-
-  //     web3wallet.on('session_request', async (error, payload) => {
-  //       if (error) {
-  //         throw error;
-  //       }
-  //       if (safe) {
-  //         web3wallet.approveSession({
-  //           accounts: [safe.getAddress()],
-  //           chainId: await safe.getChainId(),
-  //         });
-
-  //         setWcClientData(payload.params[0].peerMeta);
-  //       }
-  //     });
-
-  //     web3wallet.on('call_request', async (error, payload) => {
-  //       if (error) {
-  //         throw error;
-  //       }
-
-  //       const result = '0x';
-  //       try {
-  //         switch (payload.method) {
-  //           case 'eth_sendTransaction': {
-  //             setPendingRequest(payload);
-  //             return;
-  //           }
-
-  //           case 'personal_sign': {
-  //             const [, address] = payload.params;
-  //             const safeAddress = safe?.getAddress() ?? '';
-
-  //             if (!areStringsEqual(address, safeAddress)) {
-  //               throw new Error('The address or message hash is invalid');
-  //             }
-
-  //             setPendingRequest(payload);
-  //             return;
-  //           }
-
-  //           case 'eth_sign': {
-  //             const [address] = payload.params;
-  //             const safeAddress = safe?.getAddress() ?? '';
-
-  //             if (!areStringsEqual(address, safeAddress)) {
-  //               throw new Error('The address or message hash is invalid');
-  //             }
-
-  //             setPendingRequest(payload);
-  //             break;
-  //           }
-
-  //           case 'eth_signTypedData':
-  //           case 'eth_signTypedData_v4': {
-  //             const [address, typedDataString] = payload.params;
-  //             const safeAddress = safe?.getAddress() ?? '';
-  //             const typedData = JSON.parse(typedDataString);
-
-  //             if (!areStringsEqual(address, safeAddress)) {
-  //               throw new Error('The address is invalid');
-  //             }
-
-  //             if (isObjectEIP712TypedData(typedData)) {
-  //               setPendingRequest(payload);
-  //               return;
-  //             } else {
-  //               throw new Error('Invalid typed data');
-  //             }
-  //           }
-  //           default: {
-  //             rejectWithMessage(wcConnector, payload.id, 'METHOD_NOT_SUPPORTED');
-  //             break;
-  //           }
-  //         }
-
-  //         wcConnector.approveRequest({
-  //           id: payload.id,
-  //           result,
-  //         });
-  //       } catch (err) {
-  //         rejectWithMessage(wcConnector, payload.id, (err as Error).message);
-  //       }
-  //     });
-
-  //     web3wallet.on('session_delete', (error) => {
-  //       if (error) {
-  //         throw error;
-  //       }
-  //       wcDisconnect();
-  //     });
-  //   },
-  //   [wcDisconnect, signer, safe, connector],
-  // );
+    wallet?.disconnectSession({
+      topic: 'disconnect',
+      reason: {
+        code: 0,
+        message: 'User disconnected',
+      },
+    });
+    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
+  }, [!!wallet]);
 
   // const approveRequest = useCallback(
   //   (id: number, result: any) => {
