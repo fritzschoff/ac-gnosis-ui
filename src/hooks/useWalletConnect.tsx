@@ -32,6 +32,7 @@ const useWalletConnect = () => {
     (async () => {
       const signClient = await SignClient.init({
         projectId: '099e1ff8ded93df0432e37626e04e09d',
+        relayUrl: 'wss://relay.walletconnect.org',
         core: core,
       });
       setWallet(signClient);
@@ -55,7 +56,7 @@ const useWalletConnect = () => {
       //   }
       // });
     })();
-  }, [wallet, safe]);
+  }, [!!wallet, safe]);
 
   const approveRequest = (id?: number, hash?: string) => {
     console.log('approveRequest', id, hash, signer);
@@ -83,7 +84,6 @@ const useWalletConnect = () => {
       if (uri && safe && wallet) {
         await wallet.core.pairing.pair({
           uri,
-          activatePairing: true,
         });
         setConnectionStatus(CONNECTION_STATUS.CONNECTED);
       }
@@ -91,17 +91,30 @@ const useWalletConnect = () => {
     [wallet],
   );
 
-  const wcDisconnect = useCallback(async () => {
-    wallet?.disconnect({
-      topic: 'disconnect',
-      reason: {
-        code: 0,
-        message: 'User disconnected',
+  wallet?.on('session_proposal', (event) => {
+    console.log(event);
+    wallet.approve({
+      id: event.id,
+      namespaces: {
+        eip155: {
+          accounts: ['eip155:10:0xe2eeF82ACA1c3405cF9640B40cbD6148182E8bA6'],
+          methods: ['personal_sign', 'eth_sendTransaction'],
+          events: ['accountsChanged'],
+        },
       },
     });
+  });
 
-    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
-  }, [wallet]);
+  const wcDisconnect = useCallback(async () => {
+    // wallet?.disconnect({
+    //   topic: 'disconnect',
+    //   reason: {
+    //     code: 0,
+    //     message: 'User disconnected',
+    //   },
+    // });
+    // setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
+  }, []); // wallet
 
   // wallet?.on('session_request', async (args) => {
   //   if (safe) {
