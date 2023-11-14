@@ -27,7 +27,7 @@ const useWalletConnect = () => {
 
   const [wallet, setWallet] = useState<Web3WalletType | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
-  const [pendingRequest] = useState<RpcRequest | undefined>(undefined);
+  const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
@@ -73,15 +73,22 @@ const useWalletConnect = () => {
         });
         setConnectionStatus(CONNECTION_STATUS.CONNECTED);
 
+        wallet?.on('session_proposal', onSessionProposal);
+
         wallet?.on('session_request', async (params) => {
-          console.log(params);
           // const result = '0x';
-          // try {
-          //   switch (params.method) {
-          //     case 'eth_sendTransaction': {
-          //       setPendingRequest(payload);
-          //       return;
-          //     }
+
+          switch (params.params.request.method) {
+            case 'eth_sendTransaction': {
+              setPendingRequest({
+                id: params.id,
+                jsonrpc: 'https://mainnet.optimism.io',
+                method: params.params.request.method,
+                params: params.params.request.params,
+              });
+              return;
+            }
+          }
 
           //     case 'personal_sign': {
           //       const [, address] = payload.params;
@@ -186,8 +193,6 @@ const useWalletConnect = () => {
       });
     }
   }
-
-  wallet?.on('session_proposal', onSessionProposal);
 
   const wcDisconnect = useCallback(async () => {
     wallet?.disconnectSession({
