@@ -3,8 +3,9 @@ import { useWeb3Context } from '../web3.context';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
-import { Web3Wallet } from '@walletconnect/web3wallet';
+import { Web3Wallet, Web3WalletTypes } from '@walletconnect/web3wallet';
 import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
+import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 
 enum CONNECTION_STATUS {
   CONNECTED = 'CONNECTED',
@@ -46,13 +47,55 @@ const useWalletConnect = () => {
     console.log(wallet, id, message);
   };
   const wcDisconnect = useCallback(async () => {
-    console.log('wallet', wallet, 'sesh', wallet?.getActiveSessions(), 'pairings', wallet?.core.pairing.getPairings());
     const pairings = wallet?.core.pairing.getPairings();
     if (pairings && pairings[0]?.topic) {
-      wallet?.core.pairing.disconnect({ topic: pairings[0].topic });
+      await Promise.all(
+        pairings.map(async (pair) => {
+          return await wallet?.core.pairing.disconnect({ topic: pair.topic });
+        }),
+      );
     }
     setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
   }, [wallet]);
+
+  const onSessionProposal = useCallback(
+    async ({ id, params }: Web3WalletTypes.SessionProposal) => {
+      try {
+        const approvedNamespaces = buildApprovedNamespaces({
+          proposal: params,
+          supportedNamespaces: {
+            eip155: {
+              chains: ['eip155:10'],
+              methods: [
+                'personal_sign',
+                'eth_sign',
+                'eth_signTransaction',
+                'eth_signTypedData',
+                'eth_signTypedData_v3',
+                'eth_signTypedData_v4',
+                'eth_sendRawTransaction',
+                'eth_sendTransaction',
+              ],
+              events: ['accountsChanged', 'chainChanged'],
+              accounts: ['eip155:10:' + safe?.getAddress()],
+            },
+          },
+        });
+        await wallet?.approveSession({
+          id,
+          relayProtocol: params.relays[0].protocol,
+          namespaces: approvedNamespaces,
+        });
+      } catch (error) {
+        console.error(error);
+        await wallet?.rejectSession({
+          id,
+          reason: getSdkError('USER_REJECTED'),
+        });
+      }
+    },
+    [safe, wallet],
+  );
 
   const wcConnect = useCallback(
     async ({ uri }: WcConnectProps) => {
@@ -64,7 +107,7 @@ const useWalletConnect = () => {
           await wallet.core.pairing.ping({ topic });
           setConnectionStatus(CONNECTION_STATUS.CONNECTED);
         } catch (error) {
-          console.error('cant pair', error);
+          console.error('cant pair', JSON.stringify(error));
           await wcDisconnect();
         }
 
@@ -82,6 +125,8 @@ const useWalletConnect = () => {
           }
         });
 
+        wallet?.on('session_proposal', onSessionProposal);
+
         wallet?.on('session_delete', (error) => {
           if (error) {
             throw error;
@@ -90,12 +135,21 @@ const useWalletConnect = () => {
         });
       }
     },
-    [wallet, safe, wcDisconnect],
+    [wallet, safe, wcDisconnect, onSessionProposal],
   );
 
   const wcClientData = wallet?.metadata ?? undefined;
 
-  return { wcClientData, wcConnect, wcDisconnect, connectionStatus, pendingRequest, approveRequest, rejectRequest };
+  return {
+    wcClientData,
+    wcConnect,
+    wcDisconnect,
+    connectionStatus,
+    pendingRequest,
+    approveRequest,
+    rejectRequest,
+    wallet,
+  };
 };
 
 export { useWalletConnect, CONNECTION_STATUS };

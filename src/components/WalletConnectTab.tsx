@@ -6,11 +6,29 @@ import SignRequest from './SignRequest';
 import { useWeb3Context } from '../web3.context';
 import { getPreValidatedSignature, safeSignMessage, safeSignTypedMessage } from '../utils/safe';
 import { tryHexBytesToUtf8 } from '../utils/strings';
+import { useEffect, useState } from 'react';
+import { PairingTypes } from '@walletconnect/web3wallet/node_modules/@walletconnect/types/dist/types';
 
 const WalletConnectTab = () => {
   const { signer, safe } = useWeb3Context();
-  const { wcClientData, wcConnect, wcDisconnect, connectionStatus, pendingRequest, approveRequest, rejectRequest } =
-    useWalletConnect();
+  const {
+    wcClientData,
+    wcConnect,
+    wcDisconnect,
+    connectionStatus,
+    pendingRequest,
+    approveRequest,
+    rejectRequest,
+    wallet,
+  } = useWalletConnect();
+
+  const [parings, setParings] = useState<undefined | PairingTypes.Struct[]>();
+
+  useEffect(() => {
+    if (wallet) {
+      setParings(wallet.core.pairing.getPairings());
+    }
+  }, [wallet]);
 
   const onApprove = async () => {
     if (!pendingRequest || !signer || !safe) return;
@@ -87,6 +105,11 @@ const WalletConnectTab = () => {
             {pendingRequest && <SignRequest request={pendingRequest} onApprove={onApprove} onReject={onReject} />}
           </>
         )}
+        <Text>
+          {parings?.map((paring) => {
+            return <Text>{paring.topic}</Text>;
+          })}
+        </Text>
       </Flex>
     </Box>
   );
