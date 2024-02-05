@@ -1,4 +1,15 @@
-import { Heading, Tabs, TabList, Tab, TabPanels, TabPanel, Container, Button, Spinner } from '@chakra-ui/react';
+import {
+  Heading,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanels,
+  TabPanel,
+  Container,
+  Button,
+  Spinner,
+  useColorMode,
+} from '@chakra-ui/react';
 import TransactionList from './components/TransactionList';
 import CreateTransaction from './components/CreateTransaction';
 import HandleOwners from './components/HandleOwners';
@@ -7,14 +18,22 @@ import { useWeb3Context, CONNECTION_STATUS } from './web3.context';
 import { getChainId } from './configuration';
 import SwitchNetworkButton from './components/SwitchNetworkButton';
 import WalletConnectTab from './components/WalletConnectTab';
+import { useEffect } from 'react';
 
 const chainId = getChainId();
 
 const App = () => {
+  const { colorMode, toggleColorMode } = useColorMode();
   const { signerChainId, connect, connectionStatus } = useWeb3Context();
   const disconnected = connectionStatus === CONNECTION_STATUS.DISCONNECTED;
   const wrongSignerNetwork = signerChainId !== -1 && signerChainId !== chainId;
   const connecting = connectionStatus === CONNECTION_STATUS.CONNECTING;
+
+  useEffect(() => {
+    if (colorMode === 'light') {
+      toggleColorMode();
+    }
+  }, [colorMode, toggleColorMode]);
 
   let content: React.ReactElement;
   switch (true) {

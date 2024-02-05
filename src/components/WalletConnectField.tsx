@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { IWalletConnectSession, IClientMeta } from '@walletconnect/types';
+
 import { Input } from '@chakra-ui/react';
 
 export type WcConnectProps = {
   uri?: string | undefined;
-  session?: IWalletConnectSession | undefined;
+  session?: any | undefined;
+  //  IWalletConnectSession
 };
 
 type WalletConnectFieldProps = {
-  client?: IClientMeta;
+  client?: any;
+  //  IClientMeta;
   onConnect: ({ uri }: WcConnectProps) => Promise<void>;
 };
 

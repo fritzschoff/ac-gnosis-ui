@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
+import { ChakraProvider } from '@chakra-ui/react';
 import { theme } from '@synthetixio/v3-theme';
 import { Web3Provider } from './web3.context';
 
@@ -12,7 +12,6 @@ root.render(
   <React.StrictMode>
     <ChakraProvider theme={theme}>
       <Web3Provider>
-        <ColorModeScript initialColorMode="dark" />
         <App />
       </Web3Provider>
     </ChakraProvider>
