@@ -46,17 +46,24 @@ const useWalletConnect = () => {
   const rejectRequest = (id?: number, message?: string) => {
     console.log(wallet, id, message);
   };
-  const wcDisconnect = useCallback(async () => {
-    const pairings = wallet?.core.pairing.getPairings();
-    if (pairings && pairings[0]?.topic) {
-      await Promise.all(
-        pairings.map(async (pair) => {
-          return await wallet?.core.pairing.disconnect({ topic: pair.topic });
-        }),
-      );
-    }
-    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
-  }, [wallet]);
+  const wcDisconnect = useCallback(
+    async (topic?: string) => {
+      if (topic) {
+        wallet?.core.pairing.disconnect({ topic });
+      } else {
+        const pairings = wallet?.core.pairing.getPairings();
+        if (pairings && pairings[0]?.topic) {
+          await Promise.all(
+            pairings.map(async (pair) => {
+              return await wallet?.core.pairing.disconnect({ topic: pair.topic });
+            }),
+          );
+        }
+        setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
+      }
+    },
+    [wallet],
+  );
 
   const onSessionProposal = useCallback(
     async ({ id, params }: Web3WalletTypes.SessionProposal) => {

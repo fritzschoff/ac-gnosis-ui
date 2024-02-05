@@ -27,6 +27,7 @@ const WalletConnectTab = () => {
   useEffect(() => {
     if (wallet) {
       setParings(wallet.core.pairing.getPairings());
+      console.log(wallet.core.pairing.getPairings());
     }
   }, [wallet]);
 
@@ -96,7 +97,12 @@ const WalletConnectTab = () => {
               <Text>Connected to {wcClientData?.url || ''}</Text>
               <br />
               <img src={wcClientData?.icons?.[0]} alt="wc client icon" />
-              <Button onClick={wcDisconnect} colorScheme="cyan">
+              <Button
+                onClick={() => {
+                  wcDisconnect();
+                }}
+                colorScheme="cyan"
+              >
                 Disconnect
               </Button>
               <Text mt={8}>Keep this page open during the whole session. Signing requests will appear here.</Text>
@@ -105,11 +111,23 @@ const WalletConnectTab = () => {
             {pendingRequest && <SignRequest request={pendingRequest} onApprove={onApprove} onReject={onReject} />}
           </>
         )}
-        <Text>
+        <Flex>
           {parings?.map((paring) => {
-            return <Text>{paring.topic}</Text>;
+            return (
+              <Box key={paring.topic} p="2" border="1px solid" borderColor="cyan.500" rounded="base">
+                <Text>{paring.topic}</Text>
+                <Text>{new Date(paring.expiry * 1000).toISOString()}</Text>
+                <Button
+                  onClick={() => {
+                    wcDisconnect(paring.topic);
+                  }}
+                >
+                  Close
+                </Button>
+              </Box>
+            );
           })}
-        </Text>
+        </Flex>
       </Flex>
     </Box>
   );
