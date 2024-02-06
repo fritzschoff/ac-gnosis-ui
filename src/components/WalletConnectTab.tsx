@@ -20,16 +20,21 @@ const WalletConnectTab = () => {
     approveRequest,
     rejectRequest,
     wallet,
+    activeTopic,
   } = useWalletConnect();
 
   const [parings, setParings] = useState<undefined | PairingTypes.Struct[]>();
 
   useEffect(() => {
-    if (wallet) {
-      setParings(wallet.core.pairing.getPairings());
-      console.log(wallet.core.pairing.getPairings());
+    if (wallet || connectionStatus === CONNECTION_STATUS.CONNECTED) {
+      fetchPairs();
     }
-  }, [wallet]);
+  }, [wallet, connectionStatus]);
+
+  const fetchPairs = () => {
+    setParings(wallet?.core.pairing.getPairings());
+    console.log(wallet?.core.pairing.getPairings());
+  };
 
   const onApprove = async () => {
     if (!pendingRequest || !signer || !safe) return;
@@ -111,15 +116,15 @@ const WalletConnectTab = () => {
             {pendingRequest && <SignRequest request={pendingRequest} onApprove={onApprove} onReject={onReject} />}
           </>
         )}
-        <Flex>
+        <Flex flexDir="column">
           {parings?.map((paring) => {
             return (
-              <Box key={paring.topic} p="2" border="1px solid" borderColor="cyan.500" rounded="base">
-                <Text>{paring.topic}</Text>
-                <Text>{new Date(paring.expiry * 1000).toISOString()}</Text>
+              <Box key={paring.topic} p="2" border="1px solid" borderColor="cyan.500" rounded="base" m="4">
+                <Text>{paring.topic === activeTopic ? 'Connection you just established' : paring.topic}</Text>
+                <Text>Expiry: {new Date(paring.expiry * 1000).toISOString()}</Text>
                 <Button
                   onClick={() => {
-                    wcDisconnect(paring.topic);
+                    wcDisconnect(paring.topic).then(fetchPairs);
                   }}
                 >
                   Close

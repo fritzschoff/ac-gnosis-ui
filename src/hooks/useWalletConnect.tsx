@@ -21,6 +21,7 @@ const useWalletConnect = () => {
   const [wallet, setWallet] = useState<Web3WalletType | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
+  const [activeTopic, setActiveTopic] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -49,7 +50,7 @@ const useWalletConnect = () => {
   const wcDisconnect = useCallback(
     async (topic?: string) => {
       if (topic) {
-        wallet?.core.pairing.disconnect({ topic });
+        await wallet?.core.pairing.disconnect({ topic });
       } else {
         const pairings = wallet?.core.pairing.getPairings();
         if (pairings && pairings[0]?.topic) {
@@ -59,8 +60,8 @@ const useWalletConnect = () => {
             }),
           );
         }
-        setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
       }
+      setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
     },
     [wallet],
   );
@@ -112,6 +113,7 @@ const useWalletConnect = () => {
             uri,
           });
           await wallet.core.pairing.ping({ topic });
+          setActiveTopic(topic);
           setConnectionStatus(CONNECTION_STATUS.CONNECTED);
         } catch (error) {
           console.error('cant pair', JSON.stringify(error));
@@ -156,6 +158,7 @@ const useWalletConnect = () => {
     approveRequest,
     rejectRequest,
     wallet,
+    activeTopic,
   };
 };
 
