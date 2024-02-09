@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useWeb3Context } from '../web3.context';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
 import { SessionTypes } from '@walletconnect/types';
 import { getSdkError } from '@walletconnect/utils';
-import { providers } from 'ethers';
+
 import { Web3Wallet } from '@walletconnect/web3wallet';
 import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
 
@@ -54,7 +54,6 @@ const useWalletConnect = () => {
   const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
   const [activeTopic, setActiveTopic] = useState('');
   const [wcSession, setWcSession] = useState<SessionTypes.Struct>();
-  const web3Provider = useMemo(() => new providers.JsonRpcProvider('https://mainnet.optimism.io'), []);
 
   useEffect(() => {
     (async () => {
@@ -74,23 +73,21 @@ const useWalletConnect = () => {
 
   useEffect(() => {
     if (wallet && wcSession) {
-      wallet.on('session_request', async (event) => {
-        const { topic, id } = event;
-        const { request } = event.params;
-        const { method, params } = request;
-
-        const result = await web3Provider.send(method, params);
-        await wallet.respondSessionRequest({
-          topic,
-          response: {
-            id,
-            jsonrpc: '2.0',
-            result,
-          },
-        });
+      wallet.on('session_request', async (params) => {
+        switch (params.params.request.method) {
+          case 'eth_sendTransaction': {
+            setPendingRequest({
+              id: params.id,
+              jsonrpc: 'https://mainnet.optimism.io',
+              method: params.params.request.method,
+              params: params.params.request.params,
+            });
+            return;
+          }
+        }
       });
     }
-  }, [wcSession, web3Provider, wallet]);
+  }, [wcSession, wallet]);
 
   useEffect(() => {
     if (wallet) {
@@ -107,6 +104,7 @@ const useWalletConnect = () => {
       if (compatibleSession) {
         console.log('found session', compatibleSession);
         setWcSession(compatibleSession);
+        setConnectionStatus(CONNECTION_STATUS.CONNECTED);
       }
 
       // events
@@ -157,6 +155,7 @@ const useWalletConnect = () => {
   };
 
   const rejectRequest = (id?: number, message?: string) => {
+    setPendingRequest(undefined);
     console.log(wallet, id, message);
   };
 
@@ -167,32 +166,20 @@ const useWalletConnect = () => {
       } catch (error) {
         console.error(error);
       }
-      if (wcSession) {
-        try {
-          await wallet?.disconnectSession({
-            topic: wcSession.topic,
-            reason: {
-              code: 5100,
-              message: 'User disconnected. Safe Wallet Session ended by the user',
-            },
-          });
-          const activeSessions = wallet!.getActiveSessions();
-          const compatibleSession = Object.keys(activeSessions)
-            .map((topic) => activeSessions[topic])
-            .find(
-              (session) =>
-                session.namespaces[EVMBasedNamespaces].accounts[0] ===
-                `${EVMBasedNamespaces}:10:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`,
-            );
-
-          if (compatibleSession) {
-            console.log('found session', compatibleSession);
-            setWcSession(compatibleSession);
-          }
-        } catch (error) {
-          console.error(error);
-          console.info('could not disconnect session', wcSession);
-        }
+    } else if (wcSession) {
+      try {
+        await wallet?.disconnectSession({
+          topic: wcSession.topic,
+          reason: {
+            code: 5100,
+            message: 'User disconnected. Safe Wallet Session ended by the user',
+          },
+        });
+        setWcSession(undefined);
+        console.log('here');
+      } catch (error) {
+        console.error(error);
+        console.info('could not disconnect session', wcSession);
       }
     } else {
       const pairings = wallet?.core.pairing.getPairings();
@@ -221,20 +208,6 @@ const useWalletConnect = () => {
         console.error('cant pair', JSON.stringify(error));
         await wcDisconnect();
       }
-
-      wallet?.on('session_request', async (params) => {
-        switch (params.params.request.method) {
-          case 'eth_sendTransaction': {
-            setPendingRequest({
-              id: params.id,
-              jsonrpc: 'https://mainnet.optimism.io',
-              method: params.params.request.method,
-              params: params.params.request.params,
-            });
-            return;
-          }
-        }
-      });
     }
   };
 

@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Heading, Text } from '@chakra-ui/react';
+import { Box, Button, Flex, Text } from '@chakra-ui/react';
 import { EthSignSignature } from '@gnosis.pm/safe-core-sdk';
 import WalletConnectField from './WalletConnectField';
 import { CONNECTION_STATUS, useWalletConnect } from '../hooks/useWalletConnect';
@@ -86,6 +86,7 @@ const WalletConnectTab = () => {
               <Text>Connected to {wcClientData?.url || ''}</Text>
               <br />
               <img src={wcClientData?.icons?.[0]} alt="wc client icon" />
+              {wcSession && <Text>Expiry: {new Date(wcSession.expiry * 1000).toISOString()}</Text>}
               <Button
                 onClick={() => {
                   wcDisconnect();
@@ -100,22 +101,6 @@ const WalletConnectTab = () => {
             {pendingRequest && <SignRequest request={pendingRequest} onApprove={onApprove} onReject={onReject} />}
           </>
         )}
-
-        <Flex flexDir="column">
-          {wcSession?.expiry && (
-            <>
-              <Heading>Found active Session</Heading>
-              <Text>Expiry: {new Date(wcSession.expiry * 1000).toISOString()}</Text>
-              <Button
-                onClick={() => {
-                  wcDisconnect(wcSession.topic);
-                }}
-              >
-                Close
-              </Button>
-            </>
-          )}
-        </Flex>
       </Flex>
     </Box>
   );
