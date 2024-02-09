@@ -2,24 +2,14 @@ import injectedModule from '@web3-onboard/injected-wallets';
 import { ethers } from 'ethers';
 import Onboard from '@web3-onboard/core';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import coinbaseWalletModule from '@web3-onboard/coinbase';
-import ledgerModule from '@web3-onboard/ledger';
-import gnosisModule from '@web3-onboard/gnosis';
-import torusModule from '@web3-onboard/torus';
-import walletConnectModule from '@web3-onboard/walletconnect';
 import { getHexChainId, CHAIN_TOKEN_SYMBOL, CHAIN_NAME, CHAIN_RPC_URL } from './configuration';
 import Safe from '@gnosis.pm/safe-core-sdk';
 import { getSafe } from './utils/safe';
 
 const injected = injectedModule();
-const coinbaseWalletSdk = coinbaseWalletModule({ darkMode: true });
-const ledger = ledgerModule({ projectId: '099e1ff8ded93df0432e37626e04e09d', walletConnectVersion: 2 });
-const gnosis = gnosisModule();
-const torus = torusModule();
-const walletConnect = walletConnectModule({ projectId: '099e1ff8ded93df0432e37626e04e09d', requiredChains: [10] });
 
 const onboard = Onboard({
-  wallets: [injected, ledger, coinbaseWalletSdk, gnosis, torus, walletConnect],
+  wallets: [injected],
   chains: [
     {
       id: getHexChainId(),

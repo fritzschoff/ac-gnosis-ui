@@ -9,8 +9,16 @@ import { tryHexBytesToUtf8 } from '../utils/strings';
 
 const WalletConnectTab = () => {
   const { signer, safe } = useWeb3Context();
-  const { wcClientData, wcConnect, wcDisconnect, connectionStatus, pendingRequest, approveRequest, rejectRequest } =
-    useWalletConnect();
+  const {
+    wcClientData,
+    wcConnect,
+    wcDisconnect,
+    connectionStatus,
+    pendingRequest,
+    approveRequest,
+    rejectRequest,
+    wcSession,
+  } = useWalletConnect();
 
   const onApprove = async () => {
     if (!pendingRequest || !signer || !safe) return;
@@ -78,7 +86,13 @@ const WalletConnectTab = () => {
               <Text>Connected to {wcClientData?.url || ''}</Text>
               <br />
               <img src={wcClientData?.icons?.[0]} alt="wc client icon" />
-              <Button onClick={wcDisconnect} colorScheme="cyan">
+              {wcSession && <Text>Expiry: {new Date(wcSession.expiry * 1000).toISOString()}</Text>}
+              <Button
+                onClick={() => {
+                  wcDisconnect();
+                }}
+                colorScheme="cyan"
+              >
                 Disconnect
               </Button>
               <Text mt={8}>Keep this page open during the whole session. Signing requests will appear here.</Text>

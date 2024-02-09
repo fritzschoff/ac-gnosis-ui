@@ -1,13 +1,42 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useWeb3Context } from '../web3.context';
-// import { areStringsEqual } from '../utils/strings';
-// import { isObjectEIP712TypedData } from '../utils/eip712';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
-import { Web3Wallet, Web3WalletTypes } from '@walletconnect/web3wallet';
+import { SessionTypes } from '@walletconnect/types';
+import { getSdkError } from '@walletconnect/utils';
+
+import { Web3Wallet } from '@walletconnect/web3wallet';
 import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
-import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
+
+export const compatibleSafeMethods: string[] = [
+  'eth_accounts',
+  'net_version',
+  'eth_chainId',
+  'personal_sign',
+  'eth_sign',
+  'eth_signTypedData',
+  'eth_signTypedData_v4',
+  'eth_sendTransaction',
+  'eth_blockNumber',
+  'eth_getBalance',
+  'eth_getCode',
+  'eth_getTransactionCount',
+  'eth_getStorageAt',
+  'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getTransactionByHash',
+  'eth_getTransactionReceipt',
+  'eth_estimateGas',
+  'eth_call',
+  'eth_getLogs',
+  'eth_gasPrice',
+  'wallet_getPermissions',
+  'wallet_requestPermissions',
+  'safe_setSettings',
+];
+
+const EVMBasedNamespaces = 'eip155';
 
 enum CONNECTION_STATUS {
   CONNECTED = 'CONNECTED',
@@ -16,225 +45,186 @@ enum CONNECTION_STATUS {
 
 const core = new Core({
   projectId: 'b8433306393b78ff75897e7f76f7d411',
-}) as any;
-
-// const rejectWithMessage = (connector: any, id: number | undefined, message: string) => {
-//   connector.rejectRequest({ id, error: { message } });
-// };
+});
 
 const useWalletConnect = () => {
   const { signer, safe } = useWeb3Context();
-
   const [wallet, setWallet] = useState<Web3WalletType | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
+  const [activeTopic, setActiveTopic] = useState('');
+  const [wcSession, setWcSession] = useState<SessionTypes.Struct>();
 
   useEffect(() => {
     (async () => {
-      const signClient = await Web3Wallet.init({
+      const w = await Web3Wallet.init({
         core,
         metadata: {
-          name: 'Demo app',
-          description: 'Demo Client as Wallet/Peer',
-          url: 'www.walletconnect.com',
+          name: 'Ambassador Council',
+          description: 'Safe integration for Ambassador Council',
+          url: 'https://ambassador-council.web.app/',
           icons: [],
         },
       });
-      setWallet(signClient);
+      console.info('wallet init');
+      setWallet(w);
     })();
-  }, [!!wallet, safe]);
+  }, []);
+
+  useEffect(() => {
+    if (wallet && wcSession) {
+      wallet.on('session_request', async (params) => {
+        switch (params.params.request.method) {
+          case 'eth_sendTransaction': {
+            setPendingRequest({
+              id: params.id,
+              jsonrpc: 'https://mainnet.optimism.io',
+              method: params.params.request.method,
+              params: params.params.request.params,
+            });
+            return;
+          }
+        }
+      });
+    }
+  }, [wcSession, wallet]);
+
+  useEffect(() => {
+    if (wallet) {
+      // we try to find a compatible active session
+      const activeSessions = wallet.getActiveSessions();
+      const compatibleSession = Object.keys(activeSessions)
+        .map((topic) => activeSessions[topic])
+        .find(
+          (session) =>
+            session.namespaces[EVMBasedNamespaces].accounts[0] ===
+            `${EVMBasedNamespaces}:10:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`,
+        );
+
+      if (compatibleSession) {
+        console.log('found session', compatibleSession);
+        setWcSession(compatibleSession);
+        setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+      }
+
+      // events
+      wallet.on('session_proposal', async (proposal) => {
+        const { id, params } = proposal;
+        const { requiredNamespaces } = params;
+
+        const safeAccount = `${EVMBasedNamespaces}:${10}:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`;
+        const safeChain = `${EVMBasedNamespaces}:${10}`;
+        // we accept all events like chainChanged & accountsChanged (even if they are not compatible with the Safe)
+        const safeEvents = requiredNamespaces[EVMBasedNamespaces]?.events || [];
+
+        try {
+          const wcSession = await wallet.approveSession({
+            id,
+            namespaces: {
+              eip155: {
+                accounts: [safeAccount], // only the Safe account
+                chains: [safeChain], // only the Safe chain
+                methods: compatibleSafeMethods, // only the Safe methods
+                events: safeEvents,
+              },
+            },
+          });
+
+          setWcSession(wcSession);
+        } catch (error: any) {
+          console.log('error: ', error);
+
+          await wallet.rejectSession({
+            id: proposal.id,
+            reason: {
+              code: 5100,
+              message: 'wrong chain',
+            },
+          });
+        }
+      });
+
+      wallet.on('session_delete', async () => {
+        setWcSession(undefined);
+      });
+    }
+  }, [wallet]);
 
   const approveRequest = (id?: number, hash?: string) => {
     console.log('approveRequest', id, hash, signer);
-    // wallet?.approveSession({
-    //   id: id ?? 0,
-    //   namespaces: {
-    //     eip712: [
-    //       {
-    //         accounts: [safe?.getAddress() ?? ''],
-    //         events: ['tx.txhash'],
-    //         chains: ['10'],
-    //         methods: ['eth_sendTransaction'],
-    //       },
-    //     ],
-    //   },
-    // });
   };
 
   const rejectRequest = (id?: number, message?: string) => {
-    console.log('rejectRequest', id, message);
+    setPendingRequest(undefined);
+    console.log(wallet, id, message);
   };
 
-  const wcConnect = useCallback(
-    async ({ uri }: WcConnectProps) => {
-      if (uri && safe && wallet) {
-        await wallet.core.pairing.pair({
+  const wcDisconnect = async (topic?: string) => {
+    if (topic) {
+      try {
+        await wallet?.core.pairing.disconnect({ topic });
+      } catch (error) {
+        console.error(error);
+      }
+    } else if (wcSession) {
+      try {
+        await wallet?.disconnectSession({
+          topic: wcSession.topic,
+          reason: {
+            code: 5100,
+            message: 'User disconnected. Safe Wallet Session ended by the user',
+          },
+        });
+        setWcSession(undefined);
+        console.log('here');
+      } catch (error) {
+        console.error(error);
+        console.info('could not disconnect session', wcSession);
+      }
+    } else {
+      const pairings = wallet?.core.pairing.getPairings();
+      if (pairings && pairings[0]?.topic) {
+        await Promise.all(
+          pairings.map(async (pair) => {
+            await wallet?.disconnectSession({ topic: pair.topic, reason: getSdkError('USER_REJECTED') });
+            return await wallet?.core.pairing.disconnect({ topic: pair.topic });
+          }),
+        );
+      }
+    }
+
+    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
+  };
+
+  const wcConnect = async ({ uri }: WcConnectProps) => {
+    if (uri && safe && wallet) {
+      try {
+        const { topic } = await wallet.core.pairing.pair({
           uri,
         });
+        setActiveTopic(topic);
         setConnectionStatus(CONNECTION_STATUS.CONNECTED);
-
-        wallet?.on('session_proposal', onSessionProposal);
-
-        wallet?.on('session_request', async (params) => {
-          // const result = '0x';
-
-          switch (params.params.request.method) {
-            case 'eth_sendTransaction': {
-              setPendingRequest({
-                id: params.id,
-                jsonrpc: 'https://mainnet.optimism.io',
-                method: params.params.request.method,
-                params: params.params.request.params,
-              });
-              return;
-            }
-          }
-
-          //     case 'personal_sign': {
-          //       const [, address] = payload.params;
-          //       const safeAddress = safe?.getAddress() ?? '';
-
-          //       if (!areStringsEqual(address, safeAddress)) {
-          //         throw new Error('The address or message hash is invalid');
-          //       }
-
-          //       setPendingRequest(payload);
-          //       return;
-          //     }
-
-          //     case 'eth_sign': {
-          //       const [address] = payload.params;
-          //       const safeAddress = safe?.getAddress() ?? '';
-
-          //       if (!areStringsEqual(address, safeAddress)) {
-          //         throw new Error('The address or message hash is invalid');
-          //       }
-
-          //       setPendingRequest(payload);
-          //       break;
-          //     }
-
-          //     case 'eth_signTypedData':
-          //     case 'eth_signTypedData_v4': {
-          //       const [address, typedDataString] = payload.params;
-          //       const safeAddress = safe?.getAddress() ?? '';
-          //       const typedData = JSON.parse(typedDataString);
-
-          //       if (!areStringsEqual(address, safeAddress)) {
-          //         throw new Error('The address is invalid');
-          //       }
-
-          //       if (isObjectEIP712TypedData(typedData)) {
-          //         setPendingRequest(payload);
-          //         return;
-          //       } else {
-          //         throw new Error('Invalid typed data');
-          //       }
-          //     }
-          //     default: {
-          //       rejectWithMessage(wcConnector, payload.id, 'METHOD_NOT_SUPPORTED');
-          //       break;
-          //     }
-          //   }
-
-          //   wcConnector.approveRequest({
-          //     id: payload.id,
-          //     result,
-          //   });
-          // } catch (err) {
-          //   rejectWithMessage(wcConnector, payload.id, (err as Error).message);
-          // }
-        });
-
-        wallet?.on('session_delete', (error) => {
-          if (error) {
-            throw error;
-          }
-          wcDisconnect();
-        });
+      } catch (error) {
+        console.error('cant pair', JSON.stringify(error));
+        await wcDisconnect();
       }
-    },
-    [wallet],
-  );
-
-  async function onSessionProposal({ id, params }: Web3WalletTypes.SessionProposal) {
-    try {
-      const approvedNamespaces = buildApprovedNamespaces({
-        proposal: params,
-        supportedNamespaces: {
-          eip155: {
-            chains: ['eip155:10'],
-            methods: [
-              'personal_sign',
-              'eth_sign',
-              'eth_signTransaction',
-              'eth_signTypedData',
-              'eth_signTypedData_v3',
-              'eth_signTypedData_v4',
-              'eth_sendRawTransaction',
-              'eth_sendTransaction',
-            ],
-            events: ['accountsChanged', 'chainChanged'],
-            accounts: ['eip155:10:' + safe?.getAddress()],
-          },
-        },
-      });
-      const session = await wallet?.approveSession({
-        id,
-        relayProtocol: params.relays[0].protocol,
-        namespaces: approvedNamespaces,
-      });
-      console.log(session);
-    } catch (error) {
-      console.error(error);
-      await wallet?.rejectSession({
-        id,
-        reason: getSdkError('USER_REJECTED'),
-      });
     }
-  }
-
-  const wcDisconnect = useCallback(async () => {
-    wallet?.disconnectSession({
-      topic: 'disconnect',
-      reason: {
-        code: 0,
-        message: 'User disconnected',
-      },
-    });
-    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
-  }, [!!wallet]);
-
-  // const approveRequest = useCallback(
-  //   (id: number, result: any) => {
-  //     if (!connector) return;
-  //     connector.approveRequest({ id, result });
-  //     setPendingRequest(undefined);
-  //   },
-  //   [connector],
-  // );
-
-  // const rejectRequest = useCallback(
-  //   async (id: number, message: any) => {
-  //     if (!connector) return;
-  //     rejectWithMessage(connector, id, message);
-  //   },
-  //   [connector],
-  // );
-
-  // useEffect(() => {
-  //   if (!connector && !triedToReinitiateTheSession.current) {
-  //     const session = localStorage.getItem('walletconnect');
-  //     if (session) {
-  //       wcConnect({ session: JSON.parse(session) });
-  //       triedToReinitiateTheSession.current = true;
-  //     }
-  //   }
-  // }, [connector, wcConnect, safe, wcDisconnect]);
+  };
 
   const wcClientData = wallet?.metadata ?? undefined;
 
-  return { wcClientData, wcConnect, wcDisconnect, connectionStatus, pendingRequest, approveRequest, rejectRequest };
+  return {
+    wcClientData,
+    wcConnect,
+    wcDisconnect,
+    connectionStatus,
+    pendingRequest,
+    approveRequest,
+    rejectRequest,
+    wallet,
+    activeTopic,
+    wcSession,
+  };
 };
 
 export { useWalletConnect, CONNECTION_STATUS };
