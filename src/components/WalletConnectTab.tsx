@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Text } from '@chakra-ui/react';
+import { Box, Button, Flex, Heading, Text } from '@chakra-ui/react';
 import { EthSignSignature } from '@gnosis.pm/safe-core-sdk';
 import WalletConnectField from './WalletConnectField';
 import { CONNECTION_STATUS, useWalletConnect } from '../hooks/useWalletConnect';
@@ -6,8 +6,6 @@ import SignRequest from './SignRequest';
 import { useWeb3Context } from '../web3.context';
 import { getPreValidatedSignature, safeSignMessage, safeSignTypedMessage } from '../utils/safe';
 import { tryHexBytesToUtf8 } from '../utils/strings';
-import { useEffect, useState } from 'react';
-import { PairingTypes } from '@walletconnect/web3wallet/node_modules/@walletconnect/types/dist/types';
 
 const WalletConnectTab = () => {
   const { signer, safe } = useWeb3Context();
@@ -19,22 +17,8 @@ const WalletConnectTab = () => {
     pendingRequest,
     approveRequest,
     rejectRequest,
-    wallet,
-    activeTopic,
+    wcSession,
   } = useWalletConnect();
-
-  const [parings, setParings] = useState<undefined | PairingTypes.Struct[]>();
-
-  useEffect(() => {
-    if (wallet || connectionStatus === CONNECTION_STATUS.CONNECTED) {
-      fetchPairs();
-    }
-  }, [wallet, connectionStatus]);
-
-  const fetchPairs = () => {
-    setParings(wallet?.core.pairing.getPairings());
-    console.log(wallet?.core.pairing.getPairings());
-  };
 
   const onApprove = async () => {
     if (!pendingRequest || !signer || !safe) return;
@@ -116,22 +100,21 @@ const WalletConnectTab = () => {
             {pendingRequest && <SignRequest request={pendingRequest} onApprove={onApprove} onReject={onReject} />}
           </>
         )}
+
         <Flex flexDir="column">
-          {parings?.map((paring) => {
-            return (
-              <Box key={paring.topic} p="2" border="1px solid" borderColor="cyan.500" rounded="base" m="4">
-                <Text>{paring.topic === activeTopic ? 'Connection you just established' : paring.topic}</Text>
-                <Text>Expiry: {new Date(paring.expiry * 1000).toISOString()}</Text>
-                <Button
-                  onClick={() => {
-                    wcDisconnect(paring.topic).then(fetchPairs);
-                  }}
-                >
-                  Close
-                </Button>
-              </Box>
-            );
-          })}
+          {wcSession?.expiry && (
+            <>
+              <Heading>Found active Session</Heading>
+              <Text>Expiry: {new Date(wcSession.expiry * 1000).toISOString()}</Text>
+              <Button
+                onClick={() => {
+                  wcDisconnect(wcSession.topic);
+                }}
+              >
+                Close
+              </Button>
+            </>
+          )}
         </Flex>
       </Flex>
     </Box>

@@ -1,11 +1,42 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWeb3Context } from '../web3.context';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
-import { Web3Wallet, Web3WalletTypes } from '@walletconnect/web3wallet';
+import { SessionTypes } from '@walletconnect/types';
+import { getSdkError } from '@walletconnect/utils';
+import { providers } from 'ethers';
+import { Web3Wallet } from '@walletconnect/web3wallet';
 import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
-import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
+
+export const compatibleSafeMethods: string[] = [
+  'eth_accounts',
+  'net_version',
+  'eth_chainId',
+  'personal_sign',
+  'eth_sign',
+  'eth_signTypedData',
+  'eth_signTypedData_v4',
+  'eth_sendTransaction',
+  'eth_blockNumber',
+  'eth_getBalance',
+  'eth_getCode',
+  'eth_getTransactionCount',
+  'eth_getStorageAt',
+  'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getTransactionByHash',
+  'eth_getTransactionReceipt',
+  'eth_estimateGas',
+  'eth_call',
+  'eth_getLogs',
+  'eth_gasPrice',
+  'wallet_getPermissions',
+  'wallet_requestPermissions',
+  'safe_setSettings',
+];
+
+const EVMBasedNamespaces = 'eip155';
 
 enum CONNECTION_STATUS {
   CONNECTED = 'CONNECTED',
@@ -22,23 +53,104 @@ const useWalletConnect = () => {
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
   const [activeTopic, setActiveTopic] = useState('');
+  const [wcSession, setWcSession] = useState<SessionTypes.Struct>();
+  const web3Provider = useMemo(() => new providers.JsonRpcProvider('https://mainnet.optimism.io'), []);
 
   useEffect(() => {
     (async () => {
-      if (!wallet) {
-        const signClient = await Web3Wallet.init({
-          core,
-          metadata: {
-            name: 'Ambassador Council',
-            description: 'Safe integration for Ambassador Council',
-            url: 'https://ambassador-council.web.app/',
-            icons: [],
+      const w = await Web3Wallet.init({
+        core,
+        metadata: {
+          name: 'Ambassador Council',
+          description: 'Safe integration for Ambassador Council',
+          url: 'https://ambassador-council.web.app/',
+          icons: [],
+        },
+      });
+      console.info('wallet init');
+      setWallet(w);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (wallet && wcSession) {
+      wallet.on('session_request', async (event) => {
+        const { topic, id } = event;
+        const { request } = event.params;
+        const { method, params } = request;
+
+        const result = await web3Provider.send(method, params);
+        await wallet.respondSessionRequest({
+          topic,
+          response: {
+            id,
+            jsonrpc: '2.0',
+            result,
           },
         });
-        setWallet(signClient);
+      });
+    }
+  }, [wcSession, web3Provider, wallet]);
+
+  useEffect(() => {
+    if (wallet) {
+      // we try to find a compatible active session
+      const activeSessions = wallet.getActiveSessions();
+      const compatibleSession = Object.keys(activeSessions)
+        .map((topic) => activeSessions[topic])
+        .find(
+          (session) =>
+            session.namespaces[EVMBasedNamespaces].accounts[0] ===
+            `${EVMBasedNamespaces}:10:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`,
+        );
+
+      if (compatibleSession) {
+        console.log('found session', compatibleSession);
+        setWcSession(compatibleSession);
       }
-    })();
-  }, [wallet, safe]);
+
+      // events
+      wallet.on('session_proposal', async (proposal) => {
+        const { id, params } = proposal;
+        const { requiredNamespaces } = params;
+
+        const safeAccount = `${EVMBasedNamespaces}:${10}:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`;
+        const safeChain = `${EVMBasedNamespaces}:${10}`;
+        // we accept all events like chainChanged & accountsChanged (even if they are not compatible with the Safe)
+        const safeEvents = requiredNamespaces[EVMBasedNamespaces]?.events || [];
+
+        try {
+          const wcSession = await wallet.approveSession({
+            id,
+            namespaces: {
+              eip155: {
+                accounts: [safeAccount], // only the Safe account
+                chains: [safeChain], // only the Safe chain
+                methods: compatibleSafeMethods, // only the Safe methods
+                events: safeEvents,
+              },
+            },
+          });
+
+          setWcSession(wcSession);
+        } catch (error: any) {
+          console.log('error: ', error);
+
+          await wallet.rejectSession({
+            id: proposal.id,
+            reason: {
+              code: 5100,
+              message: 'wrong chain',
+            },
+          });
+        }
+      });
+
+      wallet.on('session_delete', async () => {
+        setWcSession(undefined);
+      });
+    }
+  }, [wallet]);
 
   const approveRequest = (id?: number, hash?: string) => {
     console.log('approveRequest', id, hash, signer);
@@ -47,105 +159,84 @@ const useWalletConnect = () => {
   const rejectRequest = (id?: number, message?: string) => {
     console.log(wallet, id, message);
   };
-  const wcDisconnect = useCallback(
-    async (topic?: string) => {
-      if (topic) {
-        await wallet?.core.pairing.disconnect({ topic });
-      } else {
-        const pairings = wallet?.core.pairing.getPairings();
-        if (pairings && pairings[0]?.topic) {
-          await Promise.all(
-            pairings.map(async (pair) => {
-              return await wallet?.core.pairing.disconnect({ topic: pair.topic });
-            }),
-          );
-        }
-      }
-      setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
-    },
-    [wallet],
-  );
 
-  const onSessionProposal = useCallback(
-    async ({ id, params }: Web3WalletTypes.SessionProposal) => {
+  const wcDisconnect = async (topic?: string) => {
+    if (topic) {
       try {
-        const approvedNamespaces = buildApprovedNamespaces({
-          proposal: params,
-          supportedNamespaces: {
-            eip155: {
-              chains: ['eip155:10'],
-              methods: [
-                'personal_sign',
-                'eth_sign',
-                'eth_signTransaction',
-                'eth_signTypedData',
-                'eth_signTypedData_v3',
-                'eth_signTypedData_v4',
-                'eth_sendRawTransaction',
-                'eth_sendTransaction',
-              ],
-              events: ['accountsChanged', 'chainChanged'],
-              accounts: ['eip155:10:' + safe?.getAddress()],
-            },
-          },
-        });
-        await wallet?.approveSession({
-          id,
-          relayProtocol: params.relays[0].protocol,
-          namespaces: approvedNamespaces,
-        });
+        await wallet?.core.pairing.disconnect({ topic });
       } catch (error) {
         console.error(error);
-        await wallet?.rejectSession({
-          id,
-          reason: getSdkError('USER_REJECTED'),
-        });
       }
-    },
-    [safe, wallet],
-  );
-
-  const wcConnect = useCallback(
-    async ({ uri }: WcConnectProps) => {
-      if (uri && safe && wallet) {
+      if (wcSession) {
         try {
-          const { topic } = await wallet.core.pairing.pair({
-            uri,
+          await wallet?.disconnectSession({
+            topic: wcSession.topic,
+            reason: {
+              code: 5100,
+              message: 'User disconnected. Safe Wallet Session ended by the user',
+            },
           });
-          await wallet.core.pairing.ping({ topic });
-          setActiveTopic(topic);
-          setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+          const activeSessions = wallet!.getActiveSessions();
+          const compatibleSession = Object.keys(activeSessions)
+            .map((topic) => activeSessions[topic])
+            .find(
+              (session) =>
+                session.namespaces[EVMBasedNamespaces].accounts[0] ===
+                `${EVMBasedNamespaces}:10:0x46abFE1C972fCa43766d6aD70E1c1Df72F4Bb4d1`,
+            );
+
+          if (compatibleSession) {
+            console.log('found session', compatibleSession);
+            setWcSession(compatibleSession);
+          }
         } catch (error) {
-          console.error('cant pair', JSON.stringify(error));
-          await wcDisconnect();
+          console.error(error);
+          console.info('could not disconnect session', wcSession);
         }
-
-        wallet?.on('session_request', async (params) => {
-          switch (params.params.request.method) {
-            case 'eth_sendTransaction': {
-              setPendingRequest({
-                id: params.id,
-                jsonrpc: 'https://mainnet.optimism.io',
-                method: params.params.request.method,
-                params: params.params.request.params,
-              });
-              return;
-            }
-          }
-        });
-
-        wallet?.on('session_proposal', onSessionProposal);
-
-        wallet?.on('session_delete', (error) => {
-          if (error) {
-            throw error;
-          }
-          wcDisconnect();
-        });
       }
-    },
-    [wallet, safe, wcDisconnect, onSessionProposal],
-  );
+    } else {
+      const pairings = wallet?.core.pairing.getPairings();
+      if (pairings && pairings[0]?.topic) {
+        await Promise.all(
+          pairings.map(async (pair) => {
+            await wallet?.disconnectSession({ topic: pair.topic, reason: getSdkError('USER_REJECTED') });
+            return await wallet?.core.pairing.disconnect({ topic: pair.topic });
+          }),
+        );
+      }
+    }
+
+    setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
+  };
+
+  const wcConnect = async ({ uri }: WcConnectProps) => {
+    if (uri && safe && wallet) {
+      try {
+        const { topic } = await wallet.core.pairing.pair({
+          uri,
+        });
+        setActiveTopic(topic);
+        setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+      } catch (error) {
+        console.error('cant pair', JSON.stringify(error));
+        await wcDisconnect();
+      }
+
+      wallet?.on('session_request', async (params) => {
+        switch (params.params.request.method) {
+          case 'eth_sendTransaction': {
+            setPendingRequest({
+              id: params.id,
+              jsonrpc: 'https://mainnet.optimism.io',
+              method: params.params.request.method,
+              params: params.params.request.params,
+            });
+            return;
+          }
+        }
+      });
+    }
+  };
 
   const wcClientData = wallet?.metadata ?? undefined;
 
@@ -159,6 +250,7 @@ const useWalletConnect = () => {
     rejectRequest,
     wallet,
     activeTopic,
+    wcSession,
   };
 };
 
