@@ -3,9 +3,7 @@ import { useWeb3Context } from '../web3.context';
 import { RpcRequest } from '../types/rpc';
 import { Core } from '@walletconnect/core';
 import { WcConnectProps } from '../components/WalletConnectField';
-import { SessionTypes } from '@walletconnect/types';
 import { getSdkError } from '@walletconnect/utils';
-
 import { Web3Wallet } from '@walletconnect/web3wallet';
 import { Web3Wallet as Web3WalletType } from '@walletconnect/web3wallet/dist/types/client';
 
@@ -53,7 +51,7 @@ const useWalletConnect = () => {
   const [connectionStatus, setConnectionStatus] = useState<CONNECTION_STATUS>(CONNECTION_STATUS.DISCONNECTED);
   const [pendingRequest, setPendingRequest] = useState<RpcRequest | undefined>(undefined);
   const [activeTopic, setActiveTopic] = useState('');
-  const [wcSession, setWcSession] = useState<SessionTypes.Struct>();
+  const [wcSession, setWcSession] = useState<any>();
 
   useEffect(() => {
     (async () => {

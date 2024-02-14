@@ -5,11 +5,17 @@ import { createContext, ReactNode, useContext, useEffect, useState } from 'react
 import { getHexChainId, CHAIN_TOKEN_SYMBOL, CHAIN_NAME, CHAIN_RPC_URL } from './configuration';
 import Safe from '@gnosis.pm/safe-core-sdk';
 import { getSafe } from './utils/safe';
+import trezor from '@web3-onboard/trezor';
+import initWalletConnect from '@web3-onboard/walletconnect';
+import ledger from '@web3-onboard/ledger';
 
 const injected = injectedModule();
+const wc = initWalletConnect({ projectId: 'b8433306393b78ff75897e7f76f7d411' });
+const t = trezor({ email: 'max@cc.snxdao.io', appUrl: window.location.host });
+const l = ledger();
 
 const onboard = Onboard({
-  wallets: [injected],
+  wallets: [injected, wc, t, l],
   chains: [
     {
       id: getHexChainId(),
