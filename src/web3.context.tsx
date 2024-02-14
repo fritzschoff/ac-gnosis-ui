@@ -12,7 +12,7 @@ import ledger from '@web3-onboard/ledger';
 const injected = injectedModule();
 const wc = initWalletConnect({ projectId: 'b8433306393b78ff75897e7f76f7d411' });
 const t = trezor({ email: 'max@cc.snxdao.io', appUrl: window.location.host });
-const l = ledger();
+const l = ledger({ projectId: 'b8433306393b78ff75897e7f76f7d411', walletConnectVersion: 2 });
 
 const onboard = Onboard({
   wallets: [injected, wc, t, l],
